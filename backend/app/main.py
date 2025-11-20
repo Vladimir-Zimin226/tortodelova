@@ -7,7 +7,7 @@ from typing import AsyncIterator
 
 from fastapi import FastAPI
 
-from backend.app.core.db import init_db, seed_initial_users, close_db
+from .core.db import init_db, seed_initial_users, close_db
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("tortodelova-backend")

@@ -12,8 +12,10 @@ from sqlalchemy.ext.asyncio import (
 
 from .config import get_settings
 from .security import hash_password
-from backend.app.models.base import Base
-from backend.app.models.user import User, UserRole
+from ..models.base import Base
+from ..models.user import User, UserRole
+from ..models.transaction import Transaction          # noqa: F401
+from ..models.prediction import PredictionRequest     # noqa: F401
 
 logger = logging.getLogger("tortodelova-db")
 
