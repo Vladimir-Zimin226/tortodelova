@@ -1,3 +1,5 @@
+asyncpg
 dotenv
 fastapi
 uvicorn
+sqlalchemy
