@@ -7,20 +7,43 @@ from typing import AsyncIterator
 
 from fastapi import FastAPI
 
+from backend.app.core.db import init_db, seed_initial_users, close_db
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("tortodelova-backend")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """
+    Жизненный цикл приложения.
 
+    При старте:
+    - создаём таблицы в БД (если ещё нет);
+    - сидим начальных пользователей (admin и test).
+
+    При остановке:
+    - корректно закрываем соединения с БД.
+    """
     logger.info("Starting tortodelova backend...")
-    yield
-    logger.info("Shutting down tortodelova backend...")
+
+    # Инициализация БД и сидинг
+    await init_db()
+    await seed_initial_users()
+
+    try:
+        yield
+    finally:
+        await close_db()
+        logger.info("Shutting down tortodelova backend...")
 
 
 def create_app() -> FastAPI:
+    """
+    Фабрика приложения FastAPI.
 
+    Здесь позже будут подключаться роутеры, middleware, CORS и т.д.
+    """
     app = FastAPI(
         title="tortodelova ML Service",
         version="0.1.0",
