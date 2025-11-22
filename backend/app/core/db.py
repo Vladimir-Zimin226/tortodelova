@@ -16,6 +16,7 @@ from ..models.base import Base
 from ..models.user import User, UserRole
 from ..models.transaction import Transaction          # noqa: F401
 from ..models.prediction import PredictionRequest     # noqa: F401
+from ..models.ml_model import MLModel                 # noqa: F401
 
 logger = logging.getLogger("tortodelova-db")
 
