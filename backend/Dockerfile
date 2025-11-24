@@ -20,4 +20,4 @@ COPY backend/app /app/app
 
 # Команда по умолчанию:
 # Внутри контейнера пакет называется "app", а main — /app/app/main.py
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["uvicorn", "app.run:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

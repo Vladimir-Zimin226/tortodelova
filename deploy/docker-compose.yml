@@ -12,6 +12,27 @@ services:
       - database
       - rabbitmq
     restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  telegram-bot:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    container_name: tortodelova-telegram-bot
+    env_file:
+      - ../app.env
+    volumes:
+      - ../backend/app:/app/app
+    depends_on:
+      - database
+      - rabbitmq
+    command: [ "python", "-m", "app.telegram.bot" ]
+    restart: unless-stopped
 
   web-proxy:
     image: nginx:1.27-alpine
