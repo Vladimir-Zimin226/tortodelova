@@ -6,8 +6,8 @@ from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 
-from ..core.config import get_settings
-from ..telegram.handlers import auth, user, predictions
+from app.core.config import get_settings
+from app.telegram.handlers import auth, user, predictions
 
 
 async def main() -> None:

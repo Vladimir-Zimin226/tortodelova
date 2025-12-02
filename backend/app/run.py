@@ -8,8 +8,8 @@ from typing import AsyncIterator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .core.db import init_db, seed_initial_users, close_db
-from .api.routes import auth, user, predictions
+from app.core.db import init_db, seed_initial_users, close_db
+from app.api.routes import auth, user, predictions
 
 try:
     from app.core.config import settings  # type: ignore[attr-defined]

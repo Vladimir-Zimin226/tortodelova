@@ -7,11 +7,11 @@ from aiogram.filters import Command
 from aiogram.types import Message
 from fastapi import HTTPException
 
-from ...core.db import AsyncSessionLocal
-from ...services.repositories.user_service import user_service
-from ...services.repositories.prediction_service import prediction_service
-from ...telegram.handlers.auth import get_backend_user_id
-from ...api.routes import predictions as predictions_api
+from app.core.db import AsyncSessionLocal
+from app.services.repositories.user_service import user_service
+from app.services.repositories.prediction_service import prediction_service
+from app.telegram.handlers.auth import get_backend_user_id
+from app.api.routes import predictions as predictions_api
 
 router = Router(name="tg_predictions")
 

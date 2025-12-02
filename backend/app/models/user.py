@@ -6,11 +6,11 @@ from typing import TYPE_CHECKING
 from sqlalchemy import String, Integer, Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .base import Base
+from app.models.base import Base
 
 if TYPE_CHECKING:
-    from .transaction import Transaction
-    from .prediction import PredictionRequest
+    from app.models.transaction import Transaction
+    from app.models.prediction import PredictionRequest
 
 
 class UserRole(str, enum.Enum):

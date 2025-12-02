@@ -6,7 +6,7 @@ from typing import Optional, Sequence
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...models.transaction import Transaction, TransactionType
+from app.models.transaction import Transaction, TransactionType
 
 logger = logging.getLogger(__name__)
 

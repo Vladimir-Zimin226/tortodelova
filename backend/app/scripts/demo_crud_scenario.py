@@ -6,15 +6,15 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..core.db import AsyncSessionLocal
-from ..models.user import UserRole
-from ..models.transaction import TransactionType
-from ..models.prediction import PredictionStatus
-from ..models.ml_model import MLModelType
-from ..services.repositories.user_service import user_service
-from ..services.repositories.transaction_service import transaction_service
-from ..services.repositories.prediction_service import prediction_service
-from ..services.repositories.ml_model_service import ml_model_service
+from app.core.db import AsyncSessionLocal
+from app.models.user import UserRole
+from app.models.transaction import TransactionType
+from app.models.prediction import PredictionStatus
+from app.models.ml_model import MLModelType
+from app.services.repositories.user_service import user_service
+from app.services.repositories.transaction_service import transaction_service
+from app.services.repositories.prediction_service import prediction_service
+from app.services.repositories.ml_model_service import ml_model_service
 
 logger = logging.getLogger("demo-crud-scenario")
 logging.basicConfig(level=logging.INFO)

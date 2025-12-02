@@ -6,8 +6,8 @@ from typing import Optional, Sequence
 from sqlalchemy import select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...models.user import User, UserRole
-from ...models.transaction import Transaction, TransactionType
+from app.models.user import User, UserRole
+from app.models.transaction import Transaction, TransactionType
 
 logger = logging.getLogger(__name__)
 
