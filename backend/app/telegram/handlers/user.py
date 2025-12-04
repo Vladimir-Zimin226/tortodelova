@@ -6,11 +6,11 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
 
-from ...core.db import AsyncSessionLocal
-from ...models.transaction import TransactionType
-from ...services.repositories.user_service import user_service
-from ...services.repositories.transaction_service import transaction_service
-from ...telegram.handlers.auth import get_backend_user_id
+from app.core.db import AsyncSessionLocal
+from app.models.transaction import TransactionType
+from app.services.repositories.user_service import user_service
+from app.services.repositories.transaction_service import transaction_service
+from app.telegram.handlers.auth import get_backend_user_id
 
 router = Router(name="tg_user")
 

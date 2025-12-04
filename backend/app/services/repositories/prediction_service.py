@@ -6,7 +6,7 @@ from typing import Optional, Sequence, Any
 from sqlalchemy import select, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...models.prediction import PredictionRequest
+from app.models.prediction import PredictionRequest
 
 logger = logging.getLogger(__name__)
 

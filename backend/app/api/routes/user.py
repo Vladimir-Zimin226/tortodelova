@@ -7,12 +7,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, EmailStr, conint, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...core.db import get_db
-from ...models.user import User, UserRole
-from ...models.transaction import TransactionType
-from ...services.repositories.user_service import user_service
-from ...services.repositories.transaction_service import transaction_service
-from ...api.routes.auth import get_current_user
+from app.core.db import get_db
+from app.models.user import User, UserRole
+from app.models.transaction import TransactionType
+from app.services.repositories.user_service import user_service
+from app.services.repositories.transaction_service import transaction_service
+from app.api.routes.auth import get_current_user
 
 router = APIRouter(
     prefix="/api/me",

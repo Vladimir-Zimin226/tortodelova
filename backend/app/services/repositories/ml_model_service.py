@@ -6,7 +6,7 @@ from typing import Optional, Sequence
 from sqlalchemy import select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...models.ml_model import MLModel, MLModelType
+from app.models.ml_model import MLModel, MLModelType
 
 logger = logging.getLogger(__name__)
 

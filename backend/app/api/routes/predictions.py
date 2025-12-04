@@ -9,14 +9,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, constr, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...core.db import get_db
-from ...models.user import User
-from ...models.transaction import TransactionType
-from ...models.ml_model import MLModelType
-from ...services.repositories.user_service import user_service
-from ...services.repositories.prediction_service import prediction_service
-from ...services.repositories.ml_model_service import ml_model_service
-from ...api.routes.auth import get_current_user
+from app.core.db import get_db
+from app.models.user import User
+from app.models.transaction import TransactionType
+from app.models.ml_model import MLModelType
+from app.services.repositories.user_service import user_service
+from app.services.repositories.prediction_service import prediction_service
+from app.services.repositories.ml_model_service import ml_model_service
+from app.api.routes.auth import get_current_user
 
 router = APIRouter(
     prefix="/api/predictions",
@@ -68,14 +68,14 @@ async def create_prediction(
     current_user: User = Depends(get_current_user),
 ) -> PredictionOut:
     """
-    Отправка данных для предсказания / генерации изображения.
+    Отправка данных для предсказания / генерации изображения:
 
-    Сейчас:
-    - prompt_en берётся равным prompt (упрощённо, без реального перевода);
-    - создаётся запись PredictionRequest со статусом 'success';
-    - кредиты списываются по стоимости ML-модели (cost_credits).
+    - выбираем активную модель генерации изображений;
+    - перед запуском тяжёлых операций проверяем, хватает ли кредитов;
+    - создаём запись PredictionRequest со статусом 'success';
+    - списываем кредиты по стоимости ML-модели (cost_credits).
 
-    Позже сюда можно встроить реальные вызовы ml_service + storage_service.
+    Позже сюда встроим реальные вызовы ml_service + storage_service.
     """
     # 1. Выбираем ML-модель
     if payload.model_id is not None:
@@ -101,6 +101,21 @@ async def create_prediction(
         ml_model = models[0]
 
     cost = ml_model.cost_credits or 0
+
+    # Быстрая проверка баланса перед "дорогими" операциями
+    if cost > 0:
+        db_user = await user_service.get(session, current_user.id)
+        if not db_user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+            )
+
+        if db_user.balance_credits < cost:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Not enough credits on balance",
+            )
 
     # 2. Упрощённый “перевод”
     prompt_ru = payload.prompt
@@ -136,7 +151,6 @@ async def create_prediction(
         await session.commit()
     except ValueError as exc:
         await session.rollback()
-        # например, недостаточно средств
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
@@ -146,7 +160,6 @@ async def create_prediction(
         raise
 
     return prediction
-
 
 @router.get(
     "",

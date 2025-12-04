@@ -6,10 +6,10 @@ from aiogram import Router, types
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message
 
-from ...core.db import AsyncSessionLocal
-from ...core.security import hash_password, verify_password
-from ...models.user import UserRole
-from ...services.repositories.user_service import user_service
+from app.core.db import AsyncSessionLocal
+from app.core.security import hash_password, verify_password
+from app.models.user import UserRole
+from app.services.repositories.user_service import user_service
 
 router = Router(name="tg_auth")
 
