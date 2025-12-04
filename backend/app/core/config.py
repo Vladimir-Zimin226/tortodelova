@@ -35,6 +35,9 @@ class Settings:
         # Соль для хеширования паролей — тоже обязательна
         self.password_salt: str = self._get_required_env("PASSWORD_SALT")
 
+        # Токен телеграм-бота (опциональный, нужен только для запуска бота)
+        self.bot_token: str | None = os.getenv("BOT_TOKEN")
+
     @staticmethod
     def _get_required_env(name: str) -> str:
         """

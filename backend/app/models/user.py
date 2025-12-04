@@ -6,11 +6,11 @@ from typing import TYPE_CHECKING
 from sqlalchemy import String, Integer, Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .base import Base
+from app.models.base import Base
 
 if TYPE_CHECKING:
-    from .transaction import Transaction
-    from .prediction import PredictionRequest
+    from app.models.transaction import Transaction
+    from app.models.prediction import PredictionRequest
 
 
 class UserRole(str, enum.Enum):
@@ -28,16 +28,17 @@ class User(Base):
     """
     Пользователь ML-сервиса.
 
-    Хранится в таблице `users`. Отвечает за:
+    Таблица `users` отвечает только за хранение данных пользователя:
 
-    - аутентификацию (email + hashed_password);
-    - авторизацию (role);
-    - текущий баланс кредитов;
-    - связь с транзакциями и запросами на генерацию.
+    - аутентификация (email + hashed_password);
+    - авторизация (role);
+    - текущий баланс кредитов (balance_credits);
+    - связи с транзакциями и prediction-запросами.
 
-    Помимо полей БД, содержит методы предметной области:
-    - создание пользователя с валидацией (`create`);
-    - операции с балансом (`add_credits`, `spend_credits`, `can_spend`).
+    Бизнес-логика управления балансом (пополнения/списания, проверки
+    достаточности средств и создание Transaction) вынесена в сервисный
+    слой (например, UserService / UserBalanceService), чтобы не
+    перегружать модель.
     """
 
     __tablename__ = "users"
@@ -88,7 +89,7 @@ class User(Base):
         doc="Запросы на генерацию изображений.",
     )
 
-    # --- Фабричные методы / бизнес-логика ---
+    # --- Фабрика создания с минимальной валидацией ---
 
     @classmethod
     def create(
@@ -101,10 +102,12 @@ class User(Base):
         """
         Создаёт нового пользователя с базовой валидацией входных данных.
 
-        Используется вместо прямого вызова конструктора в бизнес-логике,
-        чтобы не дублировать проверки.
+        Валидация здесь ограничена инвариантами самой сущности:
+        - корректность email;
+        - непустой хеш пароля;
+        - неотрицательный начальный баланс.
 
-        :raises ValueError: если email/пароль некорректны или баланс отрицательный.
+        Остальная бизнес-логика выполняется в сервисном слое.
         """
         normalized_email = cls._normalize_email(email)
         cls._validate_email(normalized_email)
@@ -118,63 +121,16 @@ class User(Base):
             balance_credits=balance_credits,
         )
 
-    def can_spend(self, credits: int) -> bool:
-        """
-        Проверяет, достаточно ли у пользователя кредитов для списания.
-
-        :param credits: требуемое число кредитов (> 0)
-        :return: True, если баланс достаточный; иначе False.
-        """
-        self._validate_positive_credits_value(credits)
-        return self.balance_credits >= credits
-
-    def spend_credits(self, credits: int) -> None:
-        """
-        Списывает кредиты с баланса пользователя.
-
-        Валидация:
-        - credits > 0
-        - у пользователя достаточно средств
-
-        :raises ValueError: если сумма некорректна или недостаточно средств.
-        """
-        self._validate_positive_credits_value(credits)
-
-        if not self.can_spend(credits):
-            raise ValueError(
-                f"Недостаточно кредитов: запрошено {credits}, "
-                f"доступно {self.balance_credits}."
-            )
-
-        self.balance_credits -= credits
-
-    def add_credits(self, credits: int) -> None:
-        """
-        Пополняет баланс пользователя на заданное количество кредитов.
-
-        :param credits: сколько кредитов добавить (> 0)
-        :raises ValueError: если credits <= 0.
-        """
-        self._validate_positive_credits_value(credits)
-        self.balance_credits += credits
-
     # --- Приватные методы валидации / нормализации ---
 
     @staticmethod
     def _normalize_email(email: str) -> str:
-        """
-        Приводит email к каноничному виду (обрезка пробелов, lower-case).
-        """
+        """Приводит email к каноничному виду (обрезка пробелов, lower-case)."""
         return email.strip().lower()
 
     @staticmethod
     def _validate_email(email: str) -> None:
-        """
-        Минимальная валидация email.
-
-        Здесь осознанно не используется сложная проверка по RFC,
-        достаточно базовой для нашего кейса.
-        """
+        """Минимальная валидация email."""
         if not email:
             raise ValueError("Email не может быть пустым.")
         if "@" not in email or "." not in email:
@@ -192,19 +148,9 @@ class User(Base):
 
     @staticmethod
     def _validate_non_negative_balance(balance: int) -> None:
-        """
-        Гарантирует, что баланс кредитов не отрицательный.
-        """
+        """Гарантирует, что начальный баланс кредитов не отрицательный."""
         if balance < 0:
             raise ValueError("Начальный баланс кредитов не может быть отрицательным.")
-
-    @staticmethod
-    def _validate_positive_credits_value(credits: int) -> None:
-        """
-        Проверяет, что значение кредитов больше нуля.
-        """
-        if credits <= 0:
-            raise ValueError("Количество кредитов должно быть > 0.")
 
     def __repr__(self) -> str:
         return (
