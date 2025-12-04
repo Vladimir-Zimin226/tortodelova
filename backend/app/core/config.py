@@ -38,6 +38,17 @@ class Settings:
         # Токен телеграм-бота (опциональный, нужен только для запуска бота)
         self.bot_token: str | None = os.getenv("BOT_TOKEN")
 
+        # Celery / RabbitMQ
+        # По умолчанию — стандартный guest/guest на сервисе rabbitmq из docker-compose.
+        self.celery_broker_url: str = os.getenv(
+            "CELERY_BROKER_URL",
+            "amqp://guest:guest@rabbitmq:5672//",
+        )
+        self.celery_result_backend: str = os.getenv(
+            "CELERY_RESULT_BACKEND",
+            "rpc://",
+        )
+
     @staticmethod
     def _get_required_env(name: str) -> str:
         """

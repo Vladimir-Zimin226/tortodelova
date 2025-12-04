@@ -34,6 +34,36 @@ services:
     command: [ "python", "-m", "app.telegram.bot" ]
     restart: unless-stopped
 
+  ml-worker:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    container_name: tortodelova-ml-worker
+    env_file:
+      - ../app.env
+    volumes:
+      - ../backend/app:/app/app
+    depends_on:
+      - rabbitmq
+      - database
+    command: [ "celery", "-A", "app.celery_app:celery_app", "worker", "-Q", "ml_tasks", "-n", "ml_worker@%h", "--loglevel=INFO" ]
+    restart: unless-stopped
+
+  db-worker:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    container_name: tortodelova-db-worker
+    env_file:
+      - ../app.env
+    volumes:
+      - ../backend/app:/app/app
+    depends_on:
+      - rabbitmq
+      - database
+    command: [ "celery", "-A", "app.celery_app:celery_app", "worker", "-Q", "db_tasks", "-n", "db_worker@%h", "--loglevel=INFO" ]
+    restart: unless-stopped
+
   web-proxy:
     image: nginx:1.27-alpine
     container_name: tortodelova-nginx
@@ -49,6 +79,10 @@ services:
   rabbitmq:
     image: rabbitmq:3-management
     container_name: tortodelova-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: torto_user
+      RABBITMQ_DEFAULT_PASS: rabbit_admin_123
+      RABBITMQ_DEFAULT_VHOST: tortodelova_vhost
     ports:
       - "5672:5672"    # основной AMQP-порт
       - "15672:15672"  # web-интерфейс управления

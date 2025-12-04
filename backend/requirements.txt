@@ -1,6 +1,7 @@
 aiogram
 asyncpg
 dotenv
+celery
 fastapi
 uvicorn
 sqlalchemy
