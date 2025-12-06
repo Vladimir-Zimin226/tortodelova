@@ -1,0 +1,12 @@
+asyncpg
+boto3
+botocore
+dotenv
+celery
+fastapi
+uvicorn
+sqlalchemy
+python-multipart
+pydantic
+pydantic[email]
+requests

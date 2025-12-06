@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import os
+import os, logging
 from datetime import datetime
 from typing import List, Optional
-from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, constr, ConfigDict
@@ -11,12 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_db
 from app.models.user import User
-from app.models.transaction import TransactionType
 from app.models.ml_model import MLModelType
 from app.services.repositories.user_service import user_service
 from app.services.repositories.prediction_service import prediction_service
 from app.services.repositories.ml_model_service import ml_model_service
 from app.api.routes.auth import get_current_user
+from app.services.prediction_queue_service import enqueue_image_generation
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/api/predictions",
@@ -29,6 +30,7 @@ S3_BUCKET = os.getenv("S3_BUCKET", "").strip("/")
 
 class PredictionCreateRequest(BaseModel):
     prompt: constr(min_length=1)
+    # Если None или <= 0 — берём первую активную image-модель
     model_id: Optional[int] = None
 
 
@@ -45,6 +47,13 @@ class PredictionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class PredictionEnqueueResponse(BaseModel):
+    task_id: str
+    queued: bool = True
+    cost_credits: int
+    message: str
+
+
 def _build_public_s3_path(s3_key: str) -> str:
     """
     Формирование публичного URL для объекта в S3/MinIO.
@@ -59,31 +68,47 @@ def _build_public_s3_path(s3_key: str) -> str:
 
 @router.post(
     "",
-    response_model=PredictionOut,
-    status_code=status.HTTP_201_CREATED,
+    response_model=PredictionEnqueueResponse,
+    status_code=status.HTTP_202_ACCEPTED,
 )
 async def create_prediction(
     payload: PredictionCreateRequest,
     session: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> PredictionOut:
+) -> PredictionEnqueueResponse:
     """
-    Отправка данных для предсказания / генерации изображения:
+    POST /api/predictions
 
-    - выбираем активную модель генерации изображений;
-    - перед запуском тяжёлых операций проверяем, хватает ли кредитов;
-    - создаём запись PredictionRequest со статусом 'success';
-    - списываем кредиты по стоимости ML-модели (cost_credits).
+    Теперь эндпоинт НЕ выполняет генерацию синхронно, а:
+    - выбирает активную image-модель (или конкретную по model_id);
+    - проверяет баланс пользователя;
+    - ставит задачу в очередь Celery (ml_tasks);
+    - возвращает task_id и информацию о том, что задача поставлена.
 
-    Позже сюда встроим реальные вызовы ml_service + storage_service.
+    Фактическая генерация и запись в БД выполняются воркерами:
+    - ml-worker: перевод + генерация картинки + сохранение в S3/MinIO;
+    - db-worker: списание кредитов + создание PredictionRequest.
     """
+
     # 1. Выбираем ML-модель
-    if payload.model_id is not None:
+    #    model_id > 0 — ищем конкретную модель,
+    #    model_id is None или <= 0 — берём первую активную image-модель.
+    if payload.model_id and payload.model_id > 0:
         ml_model = await ml_model_service.get(session, payload.model_id)
         if not ml_model:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="ML model not found",
+            )
+        if ml_model.model_type != MLModelType.IMAGE_GENERATION:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Specified model is not an image generation model",
+            )
+        if not ml_model.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Specified model is not active",
             )
     else:
         models = await ml_model_service.list(
@@ -102,7 +127,7 @@ async def create_prediction(
 
     cost = ml_model.cost_credits or 0
 
-    # Быстрая проверка баланса перед "дорогими" операциями
+    # 2. Быстрая проверка баланса перед постановкой задачи
     if cost > 0:
         db_user = await user_service.get(session, current_user.id)
         if not db_user:
@@ -117,49 +142,32 @@ async def create_prediction(
                 detail="Not enough credits on balance",
             )
 
-    # 2. Упрощённый “перевод”
-    prompt_ru = payload.prompt
-    prompt_en = payload.prompt  # здесь позже можно вызвать реальный RU->EN
-
-    # 3. Формируем s3_key / public_url (без фактической загрузки файла)
-    s3_key = f"user_{current_user.id}/prediction_{uuid4().hex}.png"
-    public_url = _build_public_s3_path(s3_key)
-
-    # 4. DB-транзакция: создаём prediction + списываем кредиты
+    # 3. Ставим задачу в Celery
     try:
-        prediction = await prediction_service.create(
-            session,
+        task_id = enqueue_image_generation(
             user_id=current_user.id,
-            prompt_ru=prompt_ru,
-            prompt_en=prompt_en,
-            s3_key=s3_key,
-            public_url=public_url,
+            prompt_ru=payload.prompt,
             credits_spent=cost,
-            status="success",
         )
-
-        if cost > 0:
-            # списываем кредиты только после успешного создания prediction
-            await user_service.change_balance_with_transaction(
-                session,
-                user_id=current_user.id,
-                amount=cost,
-                tx_type=TransactionType.DEBIT,
-                description=f"Image generation (model={ml_model.name})",
-            )
-
-        await session.commit()
-    except ValueError as exc:
-        await session.rollback()
+    except Exception as exc:
+        logger.exception("Failed to enqueue prediction task", exc_info=exc)
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to enqueue prediction task",
         ) from exc
-    except Exception:
-        await session.rollback()
-        raise
 
-    return prediction
+    # 4. Возвращаем информацию о постановке задачи
+    return PredictionEnqueueResponse(
+        task_id=str(task_id),
+        queued=True,
+        cost_credits=cost,
+        message=(
+            "Prediction task enqueued. "
+            "Result will appear in your predictions history "
+            "after processing is finished."
+        ),
+    )
+
 
 @router.get(
     "",

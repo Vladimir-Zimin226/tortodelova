@@ -127,6 +127,30 @@ class MLModelService:
         )
         return models
 
+    async def get_first_active_by_type(
+        self,
+        session: AsyncSession,
+        model_type: MLModelType,
+    ) -> Optional[MLModel]:
+        """
+        Вернуть первую активную модель указанного типа (например, image_generation).
+        """
+        res = await session.execute(
+            select(MLModel)
+            .where(
+                MLModel.model_type == model_type,
+                MLModel.is_active.is_(True),
+            )
+            .order_by(MLModel.id)
+        )
+        model = res.scalar_one_or_none()
+        logger.info(
+            "MLModelService.get_first_active_by_type: type=%s found=%s",
+            model_type,
+            bool(model),
+        )
+        return model
+
     async def update(
         self,
         session: AsyncSession,

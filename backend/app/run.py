@@ -8,7 +8,7 @@ from typing import AsyncIterator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.core.db import init_db, seed_initial_users, close_db
+from app.core.db import init_db, seed_initial_users, seed_initial_ml_models, close_db
 from app.api.routes import auth, user, predictions
 
 try:
@@ -38,6 +38,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     await init_db()
     await seed_initial_users()
+    await seed_initial_ml_models()
 
     try:
         yield
@@ -107,7 +108,7 @@ if __name__ == "__main__":
         raise RuntimeError(f"Invalid BACKEND_PORT value: {port_raw!r}") from exc
 
     uvicorn.run(
-        app,  # передаём сам объект приложения
+        app,
         host=host,
         port=port,
         reload=True,

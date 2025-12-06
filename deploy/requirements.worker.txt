@@ -1,0 +1,16 @@
+celery
+asyncpg
+boto3
+dotenv
+pydantic
+pydantic[email]
+sqlalchemy
+huggingface-hub[cli]==0.26.1
+tokenizers==0.20.3
+transformers==4.46.3
+diffusers==0.30.2
+torch
+sentencepiece
+sacremoses
+accelerate
+requests

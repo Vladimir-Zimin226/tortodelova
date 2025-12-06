@@ -6,7 +6,7 @@ import hmac
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr, constr, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -152,23 +152,24 @@ async def register(
     await session.commit()
     return user
 
-
 @router.post(
     "/login",
     response_model=TokenResponse,
 )
 async def login(
-    payload: LoginRequest,
+    form_data: OAuth2PasswordRequestForm = Depends(),
     session: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
     """
-    Авторизация по email + password.
+    Авторизация по email + password через OAuth2 password flow.
 
-    При успехе возвращает HMAC-токен, который затем
-    используется в Authorization: Bearer <token>.
     """
-    user = await user_service.get_by_email(session, payload.email)
-    if not user or not verify_password(payload.password, user.hashed_password):
+    # username в форме = email в нашей модели
+    email = form_data.username
+    password = form_data.password
+
+    user = await user_service.get_by_email(session, email)
+    if not user or not verify_password(password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
