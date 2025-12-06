@@ -16,10 +16,9 @@ class Settings:
     """
 
     def __init__(self) -> None:
-        # URL для подключения к БД (asyncpg)
         self.db_url: str = os.getenv(
             "DB_URL",
-            "postgresql+asyncpg://postgres:postgres@db:5432/tortodelova",
+            "postgresql+asyncpg://postgres:postgres@database:5432/tortodelova",
         )
 
         # Включить SQL echo (логирование SQL-запросов)
@@ -48,6 +47,46 @@ class Settings:
             "CELERY_RESULT_BACKEND",
             "rpc://",
         )
+        # --- S3 / MinIO ---
+        # Внутренний endpoint, на который будет ходить бэкенд (через docker-сеть).
+        self.s3_endpoint: str = os.getenv(
+            "S3_ENDPOINT",
+            "http://minio:9000",
+        )
+
+        # Регион (для MinIO можно указать любой)
+        self.s3_region: str = os.getenv("S3_REGION", "ru-7")
+
+        # Имя бакета — обязательно
+        self.s3_bucket: str = self._get_required_env("S3_BUCKET")
+
+        # Ключи доступа к MinIO/S3 — тоже обязательно
+        self.s3_access_key: str = self._get_required_env("S3_ACCESS_KEY")
+        self.s3_secret_key: str = self._get_required_env("S3_SECRET_KEY")
+
+        # Публичный endpoint, который будем отдавать наружу (браузеру, клиентам и т.п.).
+        self.s3_public_endpoint: str = os.getenv("S3_PUBLIC_ENDPOINT", self.s3_endpoint)
+
+        # Стиль адресации (path / virtual).
+        self.s3_addressing_style: str = os.getenv("S3_ADDRESSING_STYLE", "path")
+
+        # === ML-модели ===
+        # Общая директория
+        self.ml_models_dir: str = os.getenv("ML_MODELS_DIR", "/models")
+
+        # Конкретные папки
+        self.translator_model_dir: str = os.getenv(
+            "TRANSLATOR_MODEL_DIR",
+            os.path.join(self.ml_models_dir, "translator", "opus-mt-ru-en"),
+        )
+        self.dreamshaper_model_dir: str = os.getenv(
+            "DREAMSHAPER_MODEL_DIR",
+            os.path.join(self.ml_models_dir, "dreamshaper-8"),
+        )
+
+        # На локальной машине используем CPU.
+        # Если потом будет GPU — поставить TORCH_DEVICE=cuda.
+        self.torch_device: str = os.getenv("TORCH_DEVICE", "cpu")
 
     @staticmethod
     def _get_required_env(name: str) -> str:
