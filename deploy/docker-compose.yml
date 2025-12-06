@@ -2,7 +2,7 @@ services:
   app:
     build:
       context: ..
-      dockerfile: backend/Dockerfile
+      dockerfile: deploy/backend.Dockerfile
     container_name: tortodelova-app
     env_file:
       - ../app.env
@@ -18,11 +18,13 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
+    networks:
+      - tortonet
 
   telegram-bot:
     build:
       context: ..
-      dockerfile: backend/Dockerfile
+      dockerfile: deploy/bot.Dockerfile
     container_name: tortodelova-telegram-bot
     env_file:
       - ../app.env
@@ -31,28 +33,36 @@ services:
     depends_on:
       - database
       - rabbitmq
+      - minio
     command: [ "python", "-m", "app.telegram.bot" ]
     restart: unless-stopped
+    networks:
+      - tortonet
 
   ml-worker:
     build:
       context: ..
-      dockerfile: backend/Dockerfile
+      dockerfile: deploy/worker.Dockerfile
     container_name: tortodelova-ml-worker
     env_file:
       - ../app.env
     volumes:
       - ../backend/app:/app/app
+      - ../ml_models:/models
     depends_on:
       - rabbitmq
       - database
-    command: [ "celery", "-A", "app.celery_app:celery_app", "worker", "-Q", "ml_tasks", "-n", "ml_worker@%h", "--loglevel=INFO" ]
+    # Перекрываем CMD из backend.Dockerfile, задаём очередь и имя воркера
+    command: [ "celery", "-A", "app.celery_app:celery_app",
+               "worker", "-Q", "ml_tasks", "-n", "ml_worker@%h", "--loglevel=INFO" ]
     restart: unless-stopped
+    networks:
+      - tortonet
 
   db-worker:
     build:
       context: ..
-      dockerfile: backend/Dockerfile
+      dockerfile: deploy/worker.Dockerfile
     container_name: tortodelova-db-worker
     env_file:
       - ../app.env
@@ -61,8 +71,11 @@ services:
     depends_on:
       - rabbitmq
       - database
-    command: [ "celery", "-A", "app.celery_app:celery_app", "worker", "-Q", "db_tasks", "-n", "db_worker@%h", "--loglevel=INFO" ]
+    command: [ "celery", "-A", "app.celery_app:celery_app",
+               "worker", "-Q", "db_tasks", "-n", "db_worker@%h", "--loglevel=INFO" ]
     restart: unless-stopped
+    networks:
+      - tortonet
 
   web-proxy:
     image: nginx:1.27-alpine
@@ -75,6 +88,8 @@ services:
       - "80:80"
       - "443:80"
     restart: unless-stopped
+    networks:
+      - tortonet
 
   rabbitmq:
     image: rabbitmq:3-management
@@ -88,6 +103,8 @@ services:
       - "15672:15672"  # web-интерфейс управления
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - tortonet
 
   database:
     image: postgres:16
@@ -101,7 +118,36 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
+    networks:
+      - tortonet
+
+  minio:
+    image: minio/minio:latest
+    container_name: tortodelova-minio
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=tortodelova_s3
+      - MINIO_ROOT_PASSWORD=super-secret
+      # если фронт у тебя на другом порту — поправь origin
+      - MINIO_API_CORS_ALLOW_ORIGIN=http://localhost:8080,http://127.0.0.1:8080
+    volumes:
+      # можешь заменить путь, главное — чтобы хранилось на хосте
+      - ./data/minio:/data
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Web UI (консоль)
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - tortonet
 
 volumes:
   postgres_data:
   rabbitmq_data:
+
+networks:
+  tortonet:
+    driver: bridge

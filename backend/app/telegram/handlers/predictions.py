@@ -20,9 +20,8 @@ router = Router(name="tg_predictions")
 @router.message(Command("predict"))
 async def cmd_predict(message: Message) -> None:
     """
-    Создать новый запрос на генерацию.
+    Создать новый запрос на генерацию:
 
-    Теперь:
     - проверяем, что пользователь залогинен;
     - проверяем, что есть активная image-модель;
     - проверяем, что на балансе достаточно кредитов;
@@ -80,6 +79,7 @@ async def cmd_predict(message: Message) -> None:
         user_id=backend_user_id,
         prompt_ru=prompt,
         credits_spent=cost,
+        tg_chat_id=message.chat.id,
     )
 
     await message.answer(
