@@ -1,8 +1,9 @@
 aiogram
 asyncpg
+boto3
 dotenv
-fastapi
-uvicorn
+celery
 sqlalchemy
 pydantic
 pydantic[email]
+requests

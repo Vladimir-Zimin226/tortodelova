@@ -5,13 +5,14 @@ from typing import List
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
-from fastapi import HTTPException
 
 from app.core.db import AsyncSessionLocal
+from app.models.ml_model import MLModelType
+from app.services.prediction_queue_service import enqueue_image_generation
 from app.services.repositories.user_service import user_service
 from app.services.repositories.prediction_service import prediction_service
+from app.services.repositories.ml_model_service import ml_model_service
 from app.telegram.handlers.auth import get_backend_user_id
-from app.api.routes import predictions as predictions_api
 
 router = Router(name="tg_predictions")
 
@@ -19,7 +20,13 @@ router = Router(name="tg_predictions")
 @router.message(Command("predict"))
 async def cmd_predict(message: Message) -> None:
     """
-    Создать новый запрос на генерацию / предсказание.
+    Создать новый запрос на генерацию:
+
+    - проверяем, что пользователь залогинен;
+    - проверяем, что есть активная image-модель;
+    - проверяем, что на балансе достаточно кредитов;
+    - ставим задачу в Celery (ml_tasks -> db_tasks);
+    - результат можно посмотреть через /predictions и /prediction.
     """
     backend_user_id = get_backend_user_id(message.from_user.id)
     if backend_user_id is None:
@@ -36,6 +43,7 @@ async def cmd_predict(message: Message) -> None:
         await message.answer("Промпт не должен быть пустым.")
         return
 
+    # Проверяем пользователя, активную модель и баланс
     async with AsyncSessionLocal() as session:
         user = await user_service.get(session, backend_user_id)
         if not user:
@@ -44,24 +52,44 @@ async def cmd_predict(message: Message) -> None:
             )
             return
 
-        payload = predictions_api.PredictionCreateRequest(prompt=prompt)
-
-        try:
-            prediction = await predictions_api.create_prediction(
-                payload=payload,
-                session=session,
-                current_user=user,
+        # Берём первую активную модель для генерации изображений
+        image_model = await ml_model_service.get_first_active_by_type(
+            session,
+            MLModelType.IMAGE_GENERATION,
+        )
+        if not image_model:
+            await message.answer(
+                "Нет активной модели генерации изображений. "
+                "Обратитесь к администратору."
             )
-        except HTTPException as exc:
-            await message.answer(f"Ошибка при создании запроса: {exc.detail}")
             return
 
+        cost = image_model.cost_credits or 0
+
+        if user.balance_credits < cost:
+            await message.answer(
+                "Недостаточно кредитов для генерации.\n"
+                f"Нужно: <b>{cost}</b>, у вас: <b>{user.balance_credits}</b>.\n"
+                "Пополните баланс через /deposit."
+            )
+            return
+
+    # Ставим задачу в Celery (синхронная функция, Celery сам async-часть сделает)
+    task_id = enqueue_image_generation(
+        user_id=backend_user_id,
+        prompt_ru=prompt,
+        credits_spent=cost,
+        tg_chat_id=message.chat.id,
+    )
+
     await message.answer(
-        "Запрос на генерацию создан.\n"
-        f"ID: <code>{prediction.id}</code>\n"
-        f"Промпт: <code>{prediction.prompt_ru}</code>\n"
-        f"URL: {prediction.public_url}\n"
-        f"Списано кредитов: <b>{prediction.credits_spent}</b>."
+        "Запрос на генерацию поставлен в очередь ✅\n\n"
+        f"Промпт: <code>{prompt}</code>\n"
+        f"Стоимость: <b>{cost}</b> кредитов (будут списаны после успешной генерации).\n"
+        f"ID задачи: <code>{task_id}</code>\n\n"
+        "Статус и результат можно посмотреть:\n"
+        "• /predictions — последние запросы\n"
+        "• /prediction &lt;id&gt; — детали конкретного запроса"
     )
 
 

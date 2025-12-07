@@ -16,7 +16,7 @@ from app.models.base import Base
 from app.models.user import User, UserRole
 from app.models.transaction import Transaction          # noqa: F401
 from app.models.prediction import PredictionRequest     # noqa: F401
-from app.models.ml_model import MLModel                 # noqa: F401
+from app.models.ml_model import MLModel, MLModelType    # noqa: F401
 
 logger = logging.getLogger("tortodelova-db")
 
@@ -92,6 +92,56 @@ async def seed_initial_users() -> None:
             settings.seed_user_email,
         )
 
+async def seed_initial_ml_models() -> None:
+    """
+    Одноразовый сидинг базовых ML-моделей:
+    - переводчик RU->EN;
+    - модель генерации изображений DreamShaper.
+
+    Срабатывает только если таблица ml_models пустая.
+    """
+    async with AsyncSessionLocal() as session:
+        logger.info("Checking if initial ML models need to be seeded...")
+        from sqlalchemy import select  # уже импортирован выше, но на всякий случай
+
+        res = await session.execute(select(MLModel).limit(1))
+        existing = res.scalars().first()
+        if existing:
+            logger.info("ML models already exist, skipping seeding.")
+            return
+
+        logger.info("Seeding initial ML models...")
+
+        # Переводчик RU->EN (Helsinki-NLP opus-mt-ru-en)
+        translator = MLModel.create(
+            name="opus-mt-ru-en",
+            display_name="Helsinki-NLP opus-mt-ru-en (RU→EN)",
+            model_type=MLModelType.TRANSLATION,
+            engine="huggingface",
+            version=None,
+            cost_credits=0,
+            is_active=True,
+        )
+
+        # Модель генерации изображений (DreamShaper v8)
+        dreamshaper = MLModel.create(
+            name="dreamshaper_v8",
+            display_name="DreamShaper v8 (SD 1.5)",
+            model_type=MLModelType.IMAGE_GENERATION,
+            engine="diffusers",
+            version="v8",
+            cost_credits=10,  # можно поменять по своему тарифу
+            is_active=True,
+        )
+
+        session.add_all([translator, dreamshaper])
+        await session.commit()
+
+        logger.info(
+            "Seeded ML models: translator=%s, image_model=%s",
+            translator.name,
+            dreamshaper.name,
+        )
 
 async def get_db() -> AsyncIterator[AsyncSession]:
     """
