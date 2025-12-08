@@ -21,24 +21,6 @@ services:
     networks:
       - tortonet
 
-  telegram-bot:
-    build:
-      context: ..
-      dockerfile: deploy/bot.Dockerfile
-    container_name: tortodelova-telegram-bot
-    env_file:
-      - ../app.env
-    volumes:
-      - ../backend/app:/app/app
-    depends_on:
-      - database
-      - rabbitmq
-      - minio
-    command: [ "python", "-m", "app.telegram.bot" ]
-    restart: unless-stopped
-    networks:
-      - tortonet
-
   ml-worker:
     build:
       context: ..
@@ -52,7 +34,6 @@ services:
     depends_on:
       - rabbitmq
       - database
-    # Перекрываем CMD из backend.Dockerfile, задаём очередь и имя воркера
     command: [ "celery", "-A", "app.celery_app:celery_app",
                "worker", "-Q", "ml_tasks", "-n", "ml_worker@%h", "--loglevel=INFO" ]
     restart: unless-stopped
@@ -87,6 +68,24 @@ services:
     ports:
       - "80:80"
       - "443:80"
+    restart: unless-stopped
+    networks:
+      - tortonet
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: deploy/frontend.Dockerfile
+    container_name: tortodelova-frontend
+    env_file:
+      - ../frontend.env
+    volumes:
+      - ../frontend:/app
+      - frontend_node_modules:/app/node_modules
+    ports:
+      - "8080:8080"
+    depends_on:
+      - app
     restart: unless-stopped
     networks:
       - tortonet
@@ -128,10 +127,8 @@ services:
     environment:
       - MINIO_ROOT_USER=tortodelova_s3
       - MINIO_ROOT_PASSWORD=super-secret
-      # если фронт у тебя на другом порту — поправь origin
       - MINIO_API_CORS_ALLOW_ORIGIN=http://localhost:8080,http://127.0.0.1:8080
     volumes:
-      # можешь заменить путь, главное — чтобы хранилось на хосте
       - ./data/minio:/data
     ports:
       - "9000:9000"   # S3 API
@@ -147,6 +144,7 @@ services:
 volumes:
   postgres_data:
   rabbitmq_data:
+  frontend_node_modules:
 
 networks:
   tortonet:

@@ -1,4 +1,5 @@
 asyncpg
+bcrypt
 boto3
 botocore
 dotenv
@@ -9,4 +10,5 @@ sqlalchemy
 python-multipart
 pydantic
 pydantic[email]
+PyJWT
 requests

@@ -93,14 +93,57 @@ def put_object_bytes(
 ) -> dict:
     """
     Синхронная запись байт в MinIO из бэкенда (не через браузер).
+
+    ВАЖНО:
+    - гарантируем, что в Body уходит именно bytes;
+    - явно выставляем ContentLength = len(data), чтобы не было рассинхрона
+      и ошибок вида IncompleteBody.
     """
+    # На всякий случай приводим к bytes
+    if isinstance(data, memoryview):
+        data = data.tobytes()
+    elif not isinstance(data, (bytes, bytearray)):
+        # Если вдруг сюда прилетит что-то ещё — явно конвертим, но не даём
+        # уйти в странный стриминговый режим.
+        data = bytes(data)
+
+    length = len(data)
+
     _s3_internal.put_object(
         Bucket=settings.s3_bucket,
         Key=key,
         Body=data,
         ContentType=content_type,
+        ContentLength=length,
     )
     return {"key": key}
+
+
+def copy_object(source_key: str, dest_key: str) -> dict:
+    """
+    Копирует объект внутри одного и того же бакета MinIO/S3.
+
+    Используется StorageService.clone_prediction_image:
+    - source_key: существующий ключ (например, user-1/predictions/xxx.png)
+    - dest_key: новый ключ (например, user-2/predictions/yyy.png)
+    """
+    # На всякий случай уберём лидирующие слэши, чтобы не плодить разные формы одного ключа.
+    source_key = source_key.lstrip("/")
+    dest_key = dest_key.lstrip("/")
+
+    _s3_internal.copy_object(
+        Bucket=settings.s3_bucket,
+        CopySource={
+            "Bucket": settings.s3_bucket,
+            "Key": source_key,
+        },
+        Key=dest_key,
+    )
+
+    return {
+        "source_key": source_key,
+        "dest_key": dest_key,
+    }
 
 
 def build_public_url(key: str) -> str:

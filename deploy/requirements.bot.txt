@@ -1,9 +1,0 @@
-aiogram
-asyncpg
-boto3
-dotenv
-celery
-sqlalchemy
-pydantic
-pydantic[email]
-requests

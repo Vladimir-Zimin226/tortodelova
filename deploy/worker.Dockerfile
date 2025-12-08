@@ -11,4 +11,10 @@ RUN pip install --upgrade pip && \
 
 COPY backend/app /app/app
 
+RUN groupadd --system appuser \
+    && useradd --system -g appuser appuser \
+    && chown -R appuser:appuser /app
+
+USER appuser
+
 CMD ["celery", "-A", "app.celery_app:celery_app", "worker", "--loglevel=INFO"]
