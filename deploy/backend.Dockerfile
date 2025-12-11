@@ -17,4 +17,10 @@ RUN pip install --no-cache-dir -r /app/requirements.backend.txt
 
 COPY backend/app /app/app
 
+RUN groupadd --system appuser \
+    && useradd --system -g appuser appuser \
+    && chown -R appuser:appuser /app
+
+USER appuser
+
 CMD ["uvicorn", "app.run:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

@@ -103,6 +103,14 @@ class PredictionRequest(Base):
         doc="Текущий статус запроса.",
     )
 
+    celery_task_id: Mapped[str | None] = mapped_column(
+        String(64),
+        unique=True,
+        nullable=True,
+        index=True,
+        doc="ID Celery-задачи генерации (для демо-сценариев).",
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
