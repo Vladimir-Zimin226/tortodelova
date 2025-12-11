@@ -1,14 +1,17 @@
 from __future__ import annotations
 
-import os, logging
+import logging
 from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, constr, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_db
+from app.core.s3 import presigned_get
+from app.core.config import get_settings
 from app.models.user import User
 from app.models.ml_model import MLModelType
 from app.services.repositories.user_service import user_service
@@ -24,9 +27,7 @@ router = APIRouter(
     tags=["predictions"],
 )
 
-S3_PUBLIC_ENDPOINT = os.getenv("S3_PUBLIC_ENDPOINT", "").rstrip("/")
-S3_BUCKET = os.getenv("S3_BUCKET", "").strip("/")
-
+settings = get_settings()
 
 class PredictionCreateRequest(BaseModel):
     prompt: constr(min_length=1)
@@ -53,18 +54,12 @@ class PredictionEnqueueResponse(BaseModel):
     cost_credits: int
     message: str
 
+class DemoClaimRequest(BaseModel):
+  task_id: str
 
-def _build_public_s3_path(s3_key: str) -> str:
-    """
-    Формирование публичного URL для объекта в S3/MinIO.
 
-    Если env-переменные не заданы, возвращаем просто s3_key,
-    чтобы интерфейс всё равно работал.
-    """
-    if S3_PUBLIC_ENDPOINT and S3_BUCKET:
-        return f"{S3_PUBLIC_ENDPOINT}/{S3_BUCKET}/{s3_key}"
-    return s3_key
-
+class MessageResponse(BaseModel):
+  message: str
 
 @router.post(
     "",
@@ -79,7 +74,7 @@ async def create_prediction(
     """
     POST /api/predictions
 
-    Теперь эндпоинт НЕ выполняет генерацию синхронно, а:
+    Эндпоинт НЕ выполняет генерацию синхронно, а:
     - выбирает активную image-модель (или конкретную по model_id);
     - проверяет баланс пользователя;
     - ставит задачу в очередь Celery (ml_tasks);
@@ -91,8 +86,6 @@ async def create_prediction(
     """
 
     # 1. Выбираем ML-модель
-    #    model_id > 0 — ищем конкретную модель,
-    #    model_id is None или <= 0 — берём первую активную image-модель.
     if payload.model_id and payload.model_id > 0:
         ml_model = await ml_model_service.get(session, payload.model_id)
         if not ml_model:
@@ -149,7 +142,7 @@ async def create_prediction(
             prompt_ru=payload.prompt,
             credits_spent=cost,
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         logger.exception("Failed to enqueue prediction task", exc_info=exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -167,7 +160,6 @@ async def create_prediction(
             "after processing is finished."
         ),
     )
-
 
 @router.get(
     "",
@@ -210,3 +202,102 @@ async def get_prediction(
             detail="Prediction not found",
         )
     return prediction
+
+
+@router.get(
+    "/{prediction_id}/image",
+    status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+)
+async def get_prediction_image(
+    prediction_id: int,
+    session: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> RedirectResponse:
+    """
+    Вспомогательный эндпоинт для получения изображения по prediction_id.
+
+    - Проверяет, что prediction существует и принадлежит текущему пользователю;
+    - Если записи нет — 404;
+    - Строит presigned URL по s3_key и делает редирект на него.
+
+    Сам бакет остаётся приватным, доступ только по временной ссылке.
+    """
+    prediction = await prediction_service.get(session, prediction_id)
+    if not prediction or prediction.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Prediction not found",
+        )
+
+    if not prediction.s3_key:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Image key is not available for this prediction",
+        )
+
+    presigned = presigned_get(prediction.s3_key, expires=3600)
+    url = presigned["url"]
+
+    return RedirectResponse(url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+
+@router.get(
+    "/demo/{task_id}",
+    response_model=PredictionOut,
+)
+async def get_demo_prediction(
+    task_id: str,
+    session: AsyncSession = Depends(get_db),
+) -> PredictionOut:
+    """
+    Публичный эндпоинт: отдаёт демо-prediction по task_id,
+    но только если он принадлежит DEMO-пользователю.
+    """
+    demo_email = settings.demo_email
+    if not demo_email:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Demo user not configured",
+        )
+
+    demo_user = await user_service.get_by_email(session, demo_email)
+    if not demo_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Demo user not configured",
+        )
+
+    prediction = await prediction_service.get_by_task_id(session, task_id)
+    if not prediction or prediction.user_id != demo_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Demo prediction not found",
+        )
+
+    return prediction
+
+
+@router.post(
+    "/demo/claim",
+    response_model=MessageResponse,
+)
+async def claim_demo_prediction(
+    body: DemoClaimRequest,
+    session: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> MessageResponse:
+    """
+    Привязать демо-предсказание к текущему пользователю:
+    создаёт копию PredictionRequest с credits_spent=0.
+    """
+    cloned = await prediction_service.clone_demo_prediction_for_user(
+        session=session,
+        task_id=body.task_id,
+        new_user=current_user,
+    )
+    if not cloned:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Demo prediction not found",
+        )
+
+    return MessageResponse(message="Демо-предсказание добавлено в вашу историю")

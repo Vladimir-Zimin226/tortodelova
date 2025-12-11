@@ -80,13 +80,38 @@ class TransactionService:
         )
         return txs
 
+    async def list_all(
+        self,
+        session: AsyncSession,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> Sequence[Transaction]:
+        """
+        Список всех транзакций (для админки).
+        """
+        res = await session.execute(
+            select(Transaction)
+            .order_by(Transaction.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        txs = res.scalars().all()
+        logger.info(
+            "TransactionService.list_all: returned=%s (offset=%s, limit=%s)",
+            len(txs),
+            offset,
+            limit,
+        )
+        return txs
+
     async def delete(self, session: AsyncSession, tx_id: int) -> bool:
         res = await session.execute(
             delete(Transaction).where(Transaction.id == tx_id)
         )
         await session.flush()
-
         deleted = res.rowcount or 0
+
         logger.info(
             "TransactionService.delete: tx_id=%s deleted=%s",
             tx_id,

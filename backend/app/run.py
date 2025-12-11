@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.db import init_db, seed_initial_users, seed_initial_ml_models, close_db
 from app.api.routes import auth, user, predictions
+from app.api.routes.admin import router as admin_router
 
 try:
     from app.core.config import settings  # type: ignore[attr-defined]
@@ -24,16 +25,6 @@ logger = logging.getLogger("tortodelova-backend")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """
-    Жизненный цикл приложения.
-
-    При старте:
-    - создаём таблицы в БД (если ещё нет);
-    - сидируем начальных пользователей (admin и test).
-
-    При остановке:
-    - корректно закрываем соединения с БД.
-    """
     logger.info("Starting tortodelova backend...")
 
     await init_db()
@@ -48,12 +39,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app() -> FastAPI:
-    """
-    Фабрика приложения FastAPI.
-
-    Здесь подключаются lifespan, CORS, системные эндпоинты
-    и настройки Swagger/Redoc.
-    """
     app = FastAPI(
         title=getattr(settings, "APP_NAME", "tortodelova ML Service"),
         description=getattr(settings, "APP_DESCRIPTION", "Tortodelova ML backend"),
@@ -63,7 +48,6 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # Базовая CORS-конфигурация.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -74,16 +58,13 @@ def create_app() -> FastAPI:
 
     @app.get("/health", tags=["system"])
     async def health_check() -> dict[str, str]:
-        """
-        Эндпоинт для проверки живости контейнера.
-        Используется Docker healthcheck'ом.
-        """
         return {"status": "ok"}
 
-    # Здесь подключаем роутеры API:
+    # Подключаем роутеры:
     app.include_router(auth.router)
     app.include_router(user.router)
     app.include_router(predictions.router)
+    app.include_router(admin_router)
 
     return app
 

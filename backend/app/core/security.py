@@ -1,27 +1,34 @@
 from __future__ import annotations
 
-import hashlib
-import hmac
-
-from .config import get_settings
-
-_settings = get_settings()
+import bcrypt
 
 
 def hash_password(password: str) -> str:
     """
-    Простейшее хеширование пароля через SHA256 + соль.
+    Хеширование пароля через bcrypt.
+
+    - Генерируется случайная соль (bcrypt.gensalt());
+    - Возвращается строка, которую можно хранить в БД как есть.
     """
     if not password:
         raise ValueError("Пароль не может быть пустым.")
 
-    salted = (_settings.password_salt + password).encode("utf-8")
-    return hashlib.sha256(salted).hexdigest()
+    hashed = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt())
+    return hashed.decode("utf-8")
 
 
 def verify_password(password: str, hashed_password: str) -> bool:
     """
-    Проверка пароля против хеша.
+    Проверка пароля против bcrypt-хеша.
     """
-    calculated = hash_password(password)
-    return hmac.compare_digest(calculated, hashed_password)
+    if not password or not hashed_password:
+        return False
+
+    try:
+        return bcrypt.checkpw(
+            password.encode("utf-8"),
+            hashed_password.encode("utf-8"),
+        )
+    except ValueError:
+        # Если хеш в неожиданном формате
+        return False

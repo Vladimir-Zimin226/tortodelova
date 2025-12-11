@@ -1,14 +1,20 @@
 from __future__ import annotations
 
-import base64
-import hashlib
-import hmac
-import time
+import datetime as dt
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Request,
+    Response,
+    status,
+)
+from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr, constr, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
+import jwt
+from jwt import PyJWTError
 
 from app.core.db import get_db
 from app.core.config import get_settings
@@ -21,11 +27,10 @@ router = APIRouter(
     tags=["auth"],
 )
 
-# Настройки и "секрет" для токена берём из PASSWORD_SALT
 _settings = get_settings()
-_SECRET_KEY = _settings.password_salt
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+_JWT_SECRET_KEY = _settings.jwt_secret_key
+_JWT_ALGORITHM = _settings.jwt_algorithm
+_ACCESS_TOKEN_EXPIRE_MINUTES = _settings.access_token_expire_minutes
 
 
 class RegisterRequest(BaseModel):
@@ -52,69 +57,89 @@ class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-def _create_token(user_id: int) -> str:
+def _create_access_token(user_id: int) -> str:
     """
-    Простейший HMAC-токен без внешних зависимостей.
+    Создаёт JWT access-токен.
 
-    Формат:
-        base64url("user_id:timestamp").hex_hmac_signature
+    В payload кладём:
+    - sub: str(user_id)
+    - exp: время истечения (UTC + ACCESS_TOKEN_EXPIRE_MINUTES)
     """
-    payload = f"{user_id}:{int(time.time())}".encode("utf-8")
-    b64 = base64.urlsafe_b64encode(payload).decode("ascii")
-    signature = hmac.new(
-        _SECRET_KEY.encode("utf-8"),
-        b64.encode("ascii"),
-        hashlib.sha256,
-    ).hexdigest()
-    return f"{b64}.{signature}"
+    now = dt.datetime.utcnow()
+    expire = now + dt.timedelta(minutes=_ACCESS_TOKEN_EXPIRE_MINUTES)
+    payload = {
+        "sub": str(user_id),
+        "iat": int(now.timestamp()),
+        "exp": int(expire.timestamp()),
+    }
+    token = jwt.encode(payload, _JWT_SECRET_KEY, algorithm=_JWT_ALGORITHM)
+    return token  # в PyJWT 2.x это уже str
 
 
-def _parse_token(token: str) -> int:
+def _get_user_id_from_token(token: str) -> int:
     """
-    Распарсить токен и вернуть user_id или кинуть HTTP 401.
+    Парсит JWT и возвращает user_id или кидает HTTP 401.
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
     )
 
     try:
-        b64, signature = token.split(".", 1)
-    except ValueError:
-        raise credentials_exception
-
-    expected_sig = hmac.new(
-        _SECRET_KEY.encode("utf-8"),
-        b64.encode("ascii"),
-        hashlib.sha256,
-    ).hexdigest()
-
-    if not hmac.compare_digest(expected_sig, signature):
-        raise credentials_exception
-
-    try:
-        payload = base64.urlsafe_b64decode(b64.encode("ascii")).decode("utf-8")
-        user_id_str, _ts_str = payload.split(":", 1)
-        user_id = int(user_id_str)
-    except Exception:
+        payload = jwt.decode(
+            token,
+            _JWT_SECRET_KEY,
+            algorithms=[_JWT_ALGORITHM],
+        )
+        sub = payload.get("sub")
+        if sub is None:
+            raise credentials_exception
+        user_id = int(sub)
+    except (PyJWTError, ValueError):
         raise credentials_exception
 
     return user_id
 
 
 async def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    request: Request,
     session: AsyncSession = Depends(get_db),
 ) -> User:
     """
-    Зависимость FastAPI для получения текущего пользователя по токену.
+    Зависимость FastAPI для получения текущего пользователя по JWT-токену.
+
+    Ищем токен:
+    1) в заголовке Authorization: Bearer <token>
+    2) если нет — в HttpOnly-куке access_token
     """
-    user_id = _parse_token(token)
+    token: str | None = None
+
+    # 1) Authorization: Bearer <token>
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header.split(" ", 1)[1].strip()
+
+    # 2) HttpOnly-кука access_token
+    if not token:
+        cookie_val = request.cookies.get("access_token")
+        if cookie_val:
+            token = cookie_val.strip()
+
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user_id = _get_user_id_from_token(token)
     user = await user_service.get(session, user_id)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
+            headers={"WWW-Authenticate": "Bearer"},
         )
     return user
 
@@ -150,21 +175,24 @@ async def register(
         role=UserRole.USER,
     )
     await session.commit()
+
     return user
 
-@router.post(
-    "/login",
-    response_model=TokenResponse,
-)
+
+@router.post("/login", response_model=TokenResponse)
 async def login(
+    response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
     session: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
     """
     Авторизация по email + password через OAuth2 password flow.
 
+    username в форме = email в нашей модели.
+
+    Возвращаем токен в JSON И одновременно кладём его в HttpOnly-куку
+    access_token, чтобы <img src="/api/..."> тоже проходил авторизацию.
     """
-    # username в форме = email в нашей модели
     email = form_data.username
     password = form_data.password
 
@@ -175,5 +203,17 @@ async def login(
             detail="Incorrect email or password",
         )
 
-    token = _create_token(user.id)
+    token = _create_access_token(user.id)
+
+    # HttpOnly-кука для браузера
+    response.set_cookie(
+        key="access_token",
+        value=token,                    # храним чистый JWT
+        httponly=True,
+        secure=False,                   # в проде под HTTPS поставить True
+        samesite="lax",
+        path="/",
+        max_age=_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+
     return TokenResponse(access_token=token)

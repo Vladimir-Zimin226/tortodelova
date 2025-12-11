@@ -11,8 +11,8 @@ class Settings:
     Важно:
     - DB_URL должен быть async-URL для SQLAlchemy, например:
       postgresql+asyncpg://postgres:postgres@db:5432/tortodelova
-    - SEED_* и PASSWORD_SALT являются обязательными и
-      должны быть заданы в окружении (app.env / docker-compose).
+    - SEED_* являются обязательными и должны быть заданы
+      в окружении (app.env / docker-compose).
     """
 
     def __init__(self) -> None:
@@ -31,11 +31,18 @@ class Settings:
         self.seed_user_email: str = self._get_required_env("SEED_USER_EMAIL")
         self.seed_user_password: str = self._get_required_env("SEED_USER_PASSWORD")
 
-        # Соль для хеширования паролей — тоже обязательна
-        self.password_salt: str = self._get_required_env("PASSWORD_SALT")
+        # Демо-пользователь (опционально)
+        # Используется для первой бесплатной генерации от имени DEMO-аккаунта.
+        self.demo_email: str | None = os.getenv("DEMO_EMAIL") or None
+        self.demo_password: str | None = os.getenv("DEMO_PASSWORD") or None
 
-        # Токен телеграм-бота (опциональный, нужен только для запуска бота)
-        self.bot_token: str | None = os.getenv("BOT_TOKEN")
+        # === JWT ===
+        # Секрет для подписи JWT — обязателен, отдельно от паролей.
+        self.jwt_secret_key: str = self._get_required_env("JWT_SECRET_KEY")
+        self.jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
+        self.access_token_expire_minutes: int = int(
+            os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60")
+        )
 
         # Celery / RabbitMQ
         # По умолчанию — стандартный guest/guest на сервисе rabbitmq из docker-compose.
@@ -47,6 +54,7 @@ class Settings:
             "CELERY_RESULT_BACKEND",
             "rpc://",
         )
+
         # --- S3 / MinIO ---
         # Внутренний endpoint, на который будет ходить бэкенд (через docker-сеть).
         self.s3_endpoint: str = os.getenv(
@@ -65,7 +73,10 @@ class Settings:
         self.s3_secret_key: str = self._get_required_env("S3_SECRET_KEY")
 
         # Публичный endpoint, который будем отдавать наружу (браузеру, клиентам и т.п.).
-        self.s3_public_endpoint: str = os.getenv("S3_PUBLIC_ENDPOINT", self.s3_endpoint)
+        self.s3_public_endpoint: str = os.getenv(
+            "S3_PUBLIC_ENDPOINT",
+            self.s3_endpoint,
+        )
 
         # Стиль адресации (path / virtual).
         self.s3_addressing_style: str = os.getenv("S3_ADDRESSING_STYLE", "path")

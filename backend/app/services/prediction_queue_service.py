@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+import uuid
+from typing import Any, Dict
 
 from app.tasks.ml_tasks import run_image_generation
 
@@ -10,25 +11,26 @@ def enqueue_image_generation(
     user_id: int,
     prompt_ru: str,
     credits_spent: int,
-    tg_chat_id: Optional[int] = None,
 ) -> str:
     """
     Поставить задачу на генерацию изображения в очередь Celery.
 
+    Возвращает task_id, который потом будет сохранён в prediction_requests.celery_task_id.
     """
+    task_id = str(uuid.uuid4())
+
     payload: Dict[str, Any] = {
         "user_id": user_id,
         "prompt_ru": prompt_ru,
         "credits_spent": credits_spent,
+        "task_id": task_id,
     }
 
-    if tg_chat_id is not None:
-        payload["tg_chat_id"] = tg_chat_id
-
-    result = run_image_generation.apply_async(
+    run_image_generation.apply_async(
         kwargs={"payload": payload},
         queue="ml_tasks",
         routing_key="ml.generate",
+        task_id=task_id,
     )
 
-    return result.id
+    return task_id
