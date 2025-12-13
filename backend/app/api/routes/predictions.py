@@ -300,4 +300,6 @@ async def claim_demo_prediction(
             detail="Demo prediction not found",
         )
 
+    await session.commit()
+
     return MessageResponse(message="Демо-предсказание добавлено в вашу историю")
