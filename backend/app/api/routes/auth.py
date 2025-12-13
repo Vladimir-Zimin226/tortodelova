@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import datetime as dt
+import time
 
 from fastapi import (
     APIRouter,
@@ -65,15 +65,15 @@ def _create_access_token(user_id: int) -> str:
     - sub: str(user_id)
     - exp: время истечения (UTC + ACCESS_TOKEN_EXPIRE_MINUTES)
     """
-    now = dt.datetime.utcnow()
-    expire = now + dt.timedelta(minutes=_ACCESS_TOKEN_EXPIRE_MINUTES)
+    now = int(time.time())
+    expire = now + _ACCESS_TOKEN_EXPIRE_MINUTES * 60
+
     payload = {
         "sub": str(user_id),
-        "iat": int(now.timestamp()),
-        "exp": int(expire.timestamp()),
+        "iat": now,
+        "exp": expire,
     }
-    token = jwt.encode(payload, _JWT_SECRET_KEY, algorithm=_JWT_ALGORITHM)
-    return token  # в PyJWT 2.x это уже str
+    return jwt.encode(payload, _JWT_SECRET_KEY, algorithm=_JWT_ALGORITHM)
 
 
 def _get_user_id_from_token(token: str) -> int:
