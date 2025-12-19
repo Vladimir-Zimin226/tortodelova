@@ -10,6 +10,51 @@ import type {
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 const AUTH_COOKIE_KEY = "auth_token";
 
+function parseApiErrorMessage(text: string): string {
+  // FastAPI чаще всего возвращает: {"detail": "..."} (или detail может быть массивом/объектом)
+  const trimmed = (text ?? "").trim();
+  if (!trimmed) return "";
+
+  try {
+    const obj = JSON.parse(trimmed);
+    const detail = (obj as any)?.detail;
+
+    if (typeof detail === "string") return detail;
+    if (Array.isArray(detail) && detail.length > 0) {
+      const first = detail[0];
+      if (typeof first === "string") return first;
+      // Pydantic errors: [{loc, msg, type}]
+      if (first && typeof first === "object" && "msg" in first) return String((first as any).msg);
+      return JSON.stringify(first);
+    }
+    if (detail && typeof detail === "object") return JSON.stringify(detail);
+  } catch {
+    // не JSON — вернём как есть
+  }
+
+  return trimmed;
+}
+
+function mapToFriendlyMessage(message: string): string {
+  // Недостаточный баланс для генерации
+  if (message.includes("Not enough credits")) {
+    return "Недостаточно средств. Для генерации пополните баланс";
+  }
+  // На будущее: если бэкенд начнёт отдавать русское сообщение
+  if (message.toLowerCase().includes("недостаточно") && message.toLowerCase().includes("кредит")) {
+    return "Недостаточно средств. Для генерации пополните баланс";
+  }
+  return message;
+}
+
+async function getFriendlyError(res: Response): Promise<string> {
+  const raw = await res.text();
+  const parsed = parseApiErrorMessage(raw);
+  const msg = parsed || `HTTP error ${res.status}`;
+  return mapToFriendlyMessage(msg);
+}
+
+
 export function getAuthToken(): string | undefined {
   return Cookies.get(AUTH_COOKIE_KEY);
 }
@@ -63,8 +108,7 @@ async function request<T>(
   });
 
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `HTTP error ${res.status}`);
+    throw new Error(await getFriendlyError(res));
   }
 
   return res.json() as Promise<T>;
@@ -87,8 +131,7 @@ export async function login(email: string, password: string): Promise<TokenRespo
   });
 
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `HTTP error ${res.status}`);
+    throw new Error(await getFriendlyError(res));
   }
 
   return res.json() as Promise<TokenResponse>;
@@ -207,8 +250,7 @@ export async function downloadPredictionImage(predictionId: number): Promise<Blo
   });
 
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `HTTP error ${res.status}`);
+    throw new Error(await getFriendlyError(res));
   }
 
   return await res.blob();
@@ -250,8 +292,7 @@ export async function demoEnqueuePrediction(
   });
 
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `HTTP error ${res.status}`);
+    throw new Error(await getFriendlyError(res));
   }
 
   return res.json() as Promise<PredictionEnqueueResponse>;
