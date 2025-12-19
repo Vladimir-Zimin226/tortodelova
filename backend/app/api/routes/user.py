@@ -1,52 +1,23 @@
 from __future__ import annotations
 
-from datetime import datetime
-from typing import List, Optional
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, EmailStr, conint, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_db
-from app.models.user import User, UserRole
+from app.models.user import User
 from app.models.transaction import TransactionType
 from app.services.repositories.user_service import user_service
 from app.services.repositories.transaction_service import transaction_service
 from app.api.routes.auth import get_current_user
 
+from app.api.schemas.user import UserProfileOut, BalanceOut, DepositRequest, TransactionOut
+
 router = APIRouter(
     prefix="/api/me",
     tags=["user"],
 )
-
-
-class UserProfileOut(BaseModel):
-    id: int
-    email: EmailStr
-    role: UserRole
-    balance_credits: int
-    created_at: Optional[datetime] = None
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class BalanceOut(BaseModel):
-    balance_credits: int
-
-
-class DepositRequest(BaseModel):
-    amount: conint(gt=0)
-    description: Optional[str] = "Balance top-up"
-
-
-class TransactionOut(BaseModel):
-    id: int
-    amount: int
-    type: TransactionType
-    description: Optional[str] = None
-    created_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
 
 
 @router.get(

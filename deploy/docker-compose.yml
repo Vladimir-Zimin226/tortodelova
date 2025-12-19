@@ -6,8 +6,13 @@ services:
     container_name: tortodelova-app
     env_file:
       - ../app.env
+    environment:
+      SERVICE_NAME: backend
+      LOG_DIR: /app/logs
+      LOG_LEVEL: INFO
     volumes:
       - ../backend/app:/app/app
+      - ../logs:/app/logs
     depends_on:
       - database
       - rabbitmq
@@ -28,9 +33,14 @@ services:
     container_name: tortodelova-ml-worker
     env_file:
       - ../app.env
+    environment:
+      SERVICE_NAME: ml_worker
+      LOG_DIR: /app/logs
+      LOG_LEVEL: INFO
     volumes:
       - ../backend/app:/app/app
       - ../ml_models:/models
+      - ../logs:/app/logs
     depends_on:
       - rabbitmq
       - database
@@ -47,8 +57,13 @@ services:
     container_name: tortodelova-db-worker
     env_file:
       - ../app.env
+    environment:
+      SERVICE_NAME: db_worker
+      LOG_DIR: /app/logs
+      LOG_LEVEL: INFO
     volumes:
       - ../backend/app:/app/app
+      - ../logs:/app/logs
     depends_on:
       - rabbitmq
       - database

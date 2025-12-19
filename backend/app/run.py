@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.db import init_db, seed_initial_users, seed_initial_ml_models, close_db
+from app.core.logging_config import setup_logging
 from app.api.routes import auth, user, predictions
 from app.api.routes.admin import router as admin_router
 
@@ -19,7 +20,7 @@ except ImportError:
 
     settings = Settings()  # type: ignore[call-arg]
 
-logging.basicConfig(level=logging.INFO)
+setup_logging(service_name="backend")
 logger = logging.getLogger("tortodelova-backend")
 
 

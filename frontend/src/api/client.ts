@@ -183,6 +183,38 @@ export async function adminGetPredictions(): Promise<Prediction[]> {
   return request("/admin/predictions");
 }
 
+export async function adminDeleteUser(userId: number): Promise<{ deleted_user_id: number; message: string }> {
+  return request<{ deleted_user_id: number; message: string }>(`/admin/users/${userId}`, {
+    method: "DELETE",
+  });
+}
+
+
+/* IMAGES DOWNLOAD */
+
+export async function downloadPredictionImage(predictionId: number): Promise<Blob> {
+  const token = getAuthToken();
+  if (!token) {
+    throw new Error("Not authenticated");
+  }
+
+  const res = await fetch(`${API_BASE_URL}/predictions/${predictionId}/download`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    credentials: "include",
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `HTTP error ${res.status}`);
+  }
+
+  return await res.blob();
+}
+
+
 /* DEMO USER (для первой генерации) */
 
 const DEMO_EMAIL = import.meta.env.VITE_DEMO_EMAIL;
