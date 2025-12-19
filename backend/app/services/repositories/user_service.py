@@ -119,7 +119,7 @@ class UserService:
         res = await session.execute(
             delete(User).where(User.id == user_id)
         )
-        await session.flush()
+        await session.commit()
 
         deleted = res.rowcount or 0
         logger.info(

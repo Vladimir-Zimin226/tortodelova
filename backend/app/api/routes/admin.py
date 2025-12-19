@@ -1,19 +1,24 @@
 from __future__ import annotations
 
-from datetime import datetime
-from typing import List, Optional
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, EmailStr, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_db
 from app.api.routes.auth import get_current_user
 from app.models.user import User, UserRole
-from app.models.transaction import TransactionType, Transaction
 from app.services.repositories.user_service import user_service
 from app.services.repositories.transaction_service import transaction_service
 from app.services.repositories.prediction_service import prediction_service
+
+from app.api.schemas.admin import (
+    AdminUserOut,
+    AdminTransactionOut,
+    AdminPredictionOut,
+    AdminChangeBalanceRequest,
+    AdminDeleteUserResponse,
+)
 
 router = APIRouter(
     prefix="/api/admin",
@@ -34,45 +39,6 @@ async def get_current_admin(
         )
     return current_user
 
-class AdminUserOut(BaseModel):
-    id: int
-    email: EmailStr
-    role: UserRole
-    balance_credits: int
-    created_at: Optional[datetime] = None
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class AdminTransactionOut(BaseModel):
-    id: int
-    user_id: int
-    amount: int
-    type: TransactionType
-    description: Optional[str] = None
-    created_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class AdminPredictionOut(BaseModel):
-    id: int
-    user_id: int
-    prompt_ru: str
-    prompt_en: Optional[str] = None
-    s3_key: str
-    public_url: str
-    credits_spent: int
-    status: str
-    created_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class AdminChangeBalanceRequest(BaseModel):
-    user_id: int
-    amount: int
-    description: Optional[str] = "Admin balance change"
 
 @router.get("/users", response_model=List[AdminUserOut])
 async def admin_list_users(
@@ -96,8 +62,6 @@ async def admin_change_user_balance(
 ) -> AdminUserOut:
     """
     Пополнение баланса пользователю от имени администратора.
-
-    amount > 0, создаётся Transaction типа CREDIT.
     """
     from app.models.transaction import TransactionType
 
@@ -120,6 +84,29 @@ async def admin_change_user_balance(
     return user
 
 
+@router.delete("/users/{user_id}", response_model=AdminDeleteUserResponse)
+async def admin_delete_user(
+    user_id: int,
+    session: AsyncSession = Depends(get_db),
+    current_admin: User = Depends(get_current_admin),
+) -> AdminDeleteUserResponse:
+    if user_id == current_admin.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Admin can't delete themselves",
+        )
+
+    user = await user_service.get(session, user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    await user_service.delete(session, user_id)
+
+    return AdminDeleteUserResponse(deleted_user_id=user_id, message="User deleted")
+
 @router.get("/transactions", response_model=List[AdminTransactionOut])
 async def admin_list_transactions(
     session: AsyncSession = Depends(get_db),
@@ -130,7 +117,6 @@ async def admin_list_transactions(
     """
     Список всех транзакций в системе для администратора.
     """
-    # Нужен метод list_all в transaction_service.
     txs = await transaction_service.list_all(
         session,
         limit=limit,

@@ -51,8 +51,7 @@ class MLService:
         if self._translator_model is not None:
             return
 
-        from transformers import MarianMTModel, MarianTokenizer  # локальный импорт
-        import torch
+        from transformers import MarianMTModel, MarianTokenizer
 
         model_dir = Path(settings.translator_model_dir)
         logger.info("MLService: loading translator from %s", model_dir)

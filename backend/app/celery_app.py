@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-import logging
+import logging, os
 
 from celery import Celery
 from kombu import Exchange, Queue
 
 from app.core.config import get_settings
+from app.core.logging_config import setup_logging
+
+setup_logging(service_name=os.getenv("SERVICE_NAME", "celery"))
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +44,8 @@ celery_app.conf.update(
     ),
     task_time_limit=300,        # защита от зависших задач
     task_soft_time_limit=240,
+    worker_hijack_root_logger=False,
+    worker_redirect_stdouts=False,
 )
 
 # Авто-поиск задач в пакете app.tasks
