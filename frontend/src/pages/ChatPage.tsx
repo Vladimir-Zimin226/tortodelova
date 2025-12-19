@@ -5,6 +5,7 @@ import {
     enqueuePrediction,
     getMyPredictions,
     getDemoPrediction,
+    downloadPredictionImage,
 } from "../api/client";
 import type {Prediction} from "../types/api";
 import {AuthModal} from "../components/AuthModal";
@@ -136,6 +137,50 @@ export const ChatPage: React.FC = () => {
         }
     };
 
+    const handleDownload = async (predictionId: number) => {
+        try {
+            const blob = await downloadPredictionImage(predictionId);
+            const url = URL.createObjectURL(blob);
+
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `prediction-${predictionId}.png`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+
+            URL.revokeObjectURL(url);
+        } catch (e: any) {
+            setError(e?.message || "Ошибка скачивания");
+        }
+    };
+
+    const imageContainerStyle: React.CSSProperties = {
+        position: "relative",
+        display: "inline-block",
+    };
+
+    const downloadIconButtonStyle: React.CSSProperties = {
+        position: "absolute",
+        top: 10,
+        right: 10,
+        width: 36,
+        height: 36,
+        borderRadius: 10,
+        border: "1px solid rgba(255,255,255,0.25)",
+        background: "rgba(0,0,0,0.25)",
+        color: "rgba(255,255,255,0.9)",
+        cursor: "pointer",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        boxShadow: "0 2px 10px rgba(0,0,0,0.10)",
+        backdropFilter: "blur(6px)",
+        WebkitBackdropFilter: "blur(6px)",
+        opacity: 0.85,
+    };
+
+
     return (
         <>
             <div className="chat-page">
@@ -160,10 +205,46 @@ export const ChatPage: React.FC = () => {
 
                                 {m.prediction && (
                                     <div className="chat-image-wrapper">
-                                        <img
-                                            src={`/api/predictions/${m.prediction.id}/image`}
-                                            alt="Сгенерированный торт"
-                                        />
+                                        <div style={imageContainerStyle}>
+                                            <img
+                                                src={`/api/predictions/${m.prediction.id}/image`}
+                                                alt="Сгенерированный торт"
+                                            />
+
+                                            {isAuthenticated && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleDownload(m.prediction!.id)}
+                                                    style={downloadIconButtonStyle}
+                                                    title="Скачать"
+                                                    aria-label="Скачать изображение"
+                                                >
+                                                    {/* Иконка "Download" (SVG) */}
+                                                    <svg
+                                                        width="18"
+                                                        height="18"
+                                                        viewBox="0 0 24 24"
+                                                        fill="none"
+                                                        xmlns="http://www.w3.org/2000/svg"
+                                                        aria-hidden="true"
+                                                    >
+                                                        <path
+                                                            d="M12 3v10m0 0l4-4m-4 4l-4-4"
+                                                            stroke="currentColor"
+                                                            strokeWidth="2"
+                                                            strokeLinecap="round"
+                                                            strokeLinejoin="round"
+                                                        />
+                                                        <path
+                                                            d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"
+                                                            stroke="currentColor"
+                                                            strokeWidth="2"
+                                                            strokeLinecap="round"
+                                                        />
+                                                    </svg>
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
                                 )}
                             </div>

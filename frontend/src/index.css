@@ -1125,3 +1125,12 @@ button {
         padding-inline: 1.2rem;
     }
 }
+
+/* Увеличенная модалка истории */
+@media (min-width: 768px) {
+  .auth-modal.auth-modal--history {
+    width: 90vw;
+    max-width: 1200px;
+  }
+}
+

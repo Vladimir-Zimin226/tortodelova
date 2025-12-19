@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from typing import Optional
+
 import boto3
 from botocore.client import Config
+from botocore.response import StreamingBody
 
 from app.core.config import get_settings
 
@@ -162,3 +165,15 @@ def build_public_url(key: str) -> str:
 
     # Для virtual-host стиля предполагаем, что bucket уже зашит в base
     return f"{base}/{key}"
+
+def get_object_stream(key: str) -> tuple[StreamingBody, Optional[str], Optional[int]]:
+    """
+    Возвращает поток тела объекта и метаданные (content_type, content_length).
+
+    ВАЖНО: это синхронный вызов boto3, вызывать из async-кода через asyncio.to_thread(...).
+    """
+    resp = _s3_internal.get_object(Bucket=settings.s3_bucket, Key=key)
+    body: StreamingBody = resp["Body"]
+    content_type: Optional[str] = resp.get("ContentType")
+    content_length: Optional[int] = resp.get("ContentLength")
+    return body, content_type, content_length

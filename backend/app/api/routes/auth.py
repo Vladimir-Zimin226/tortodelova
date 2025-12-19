@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import datetime as dt
+import time
 
 from fastapi import (
     APIRouter,
@@ -11,7 +11,6 @@ from fastapi import (
     status,
 )
 from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import BaseModel, EmailStr, constr, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 import jwt
 from jwt import PyJWTError
@@ -21,6 +20,8 @@ from app.core.config import get_settings
 from app.core.security import hash_password, verify_password
 from app.models.user import User, UserRole
 from app.services.repositories.user_service import user_service
+
+from app.api.schemas.auth import RegisterRequest, TokenResponse, UserResponse
 
 router = APIRouter(
     prefix="/api/auth",
@@ -33,30 +34,6 @@ _JWT_ALGORITHM = _settings.jwt_algorithm
 _ACCESS_TOKEN_EXPIRE_MINUTES = _settings.access_token_expire_minutes
 
 
-class RegisterRequest(BaseModel):
-    email: EmailStr
-    password: constr(min_length=6, max_length=128)
-
-
-class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str
-
-
-class TokenResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-
-
-class UserResponse(BaseModel):
-    id: int
-    email: EmailStr
-    role: UserRole
-    balance_credits: int
-
-    model_config = ConfigDict(from_attributes=True)
-
-
 def _create_access_token(user_id: int) -> str:
     """
     Создаёт JWT access-токен.
@@ -65,15 +42,15 @@ def _create_access_token(user_id: int) -> str:
     - sub: str(user_id)
     - exp: время истечения (UTC + ACCESS_TOKEN_EXPIRE_MINUTES)
     """
-    now = dt.datetime.utcnow()
-    expire = now + dt.timedelta(minutes=_ACCESS_TOKEN_EXPIRE_MINUTES)
+    now = int(time.time())
+    expire = now + _ACCESS_TOKEN_EXPIRE_MINUTES * 60
+
     payload = {
         "sub": str(user_id),
-        "iat": int(now.timestamp()),
-        "exp": int(expire.timestamp()),
+        "iat": now,
+        "exp": expire,
     }
-    token = jwt.encode(payload, _JWT_SECRET_KEY, algorithm=_JWT_ALGORITHM)
-    return token  # в PyJWT 2.x это уже str
+    return jwt.encode(payload, _JWT_SECRET_KEY, algorithm=_JWT_ALGORITHM)
 
 
 def _get_user_id_from_token(token: str) -> int:
@@ -205,12 +182,11 @@ async def login(
 
     token = _create_access_token(user.id)
 
-    # HttpOnly-кука для браузера
     response.set_cookie(
         key="access_token",
-        value=token,                    # храним чистый JWT
+        value=token,
         httponly=True,
-        secure=False,                   # в проде под HTTPS поставить True
+        secure=False,
         samesite="lax",
         path="/",
         max_age=_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
